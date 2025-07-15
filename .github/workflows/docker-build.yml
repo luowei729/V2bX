@@ -34,7 +34,7 @@ jobs:
         file: Dockerfile
         push: true
         tags: |
-          ghcr.io/luowei729/v2bx:latest
-          ghcr.io/luowei729/v2bx:${{ github.sha }}
-        cache-from: type=registry,ref=ghcr.io/${{ github.repository }}:cache
-        cache-to: type=registry,ref=ghcr.io/${{ github.repository }}:cache,mode=max
+          ghcr.io/luowei729/vb:latest
+          ghcr.io/luowei729/vb:${{ github.sha }}
+        cache-from: type=registry,ref=ghcr.io/luowei729/vb:cache
+        cache-to: type=registry,ref=ghcr.io/luowei729/vb:cache,mode=max
