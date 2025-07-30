@@ -102,8 +102,8 @@ type DefaultDispatcher struct {
 	router routing.Router
 	policy policy.Manager
 	stats  stats.Manager
-	dns    dns.Client
 	fdns   dns.FakeDNSEngine
+	Wm     *WriterManager
 }
 
 func init() {
@@ -127,6 +127,9 @@ func (d *DefaultDispatcher) Init(config *Config, om outbound.Manager, router rou
 	d.router = router
 	d.policy = pm
 	d.stats = sm
+	d.Wm = &WriterManager{
+		writers: make(map[string]map[*ManagedWriter]struct{}),
+	}
 	return nil
 }
 
@@ -190,6 +193,13 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network) (*
 			common.Interrupt(inboundLink.Reader)
 			return nil, nil, nil, errors.New("Limited ", user.Email, " by conn or ip")
 		}
+		managedWriter := &ManagedWriter{
+			writer:  uplinkWriter,
+			email:   user.Email,
+			manager: d.Wm,
+		}
+		d.Wm.AddWriter(managedWriter)
+		inboundLink.Writer = managedWriter
 		if w != nil {
 			inboundLink.Writer = rate.NewRateLimitWriter(inboundLink.Writer, w)
 			outboundLink.Writer = rate.NewRateLimitWriter(outboundLink.Writer, w)
