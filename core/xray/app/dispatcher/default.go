@@ -10,9 +10,11 @@ import (
 	"sync"
 	"time"
 
+	"github.com/InazumaV/V2bX/common/counter"
 	"github.com/InazumaV/V2bX/common/rate"
 	"github.com/InazumaV/V2bX/limiter"
 
+	"github.com/xtls/xray-core/app/dispatcher"
 	"github.com/xtls/xray-core/common"
 	"github.com/xtls/xray-core/common/buf"
 	"github.com/xtls/xray-core/common/errors"
@@ -98,12 +100,13 @@ func (r *cachedReader) Interrupt() {
 
 // DefaultDispatcher is a default implementation of Dispatcher.
 type DefaultDispatcher struct {
-	ohm    outbound.Manager
-	router routing.Router
-	policy policy.Manager
-	stats  stats.Manager
-	fdns   dns.FakeDNSEngine
-	Wm     *WriterManager
+	ohm     outbound.Manager
+	router  routing.Router
+	policy  policy.Manager
+	stats   stats.Manager
+	fdns    dns.FakeDNSEngine
+	Wm      *WriterManager
+	Counter sync.Map
 }
 
 func init() {
@@ -165,7 +168,7 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network) (*
 	var user *protocol.MemoryUser
 	if sessionInbound != nil {
 		user = sessionInbound.User
-		sessionInbound.CanSpliceCopy = 3
+		//sessionInbound.CanSpliceCopy = 3
 	}
 
 	var limit *limiter.Limiter
@@ -204,24 +207,24 @@ func (d *DefaultDispatcher) getLink(ctx context.Context, network net.Network) (*
 			inboundLink.Writer = rate.NewRateLimitWriter(inboundLink.Writer, w)
 			outboundLink.Writer = rate.NewRateLimitWriter(outboundLink.Writer, w)
 		}
-		p := d.policy.ForLevel(user.Level)
-		if p.Stats.UserUplink {
-			name := "user>>>" + user.Email + ">>>traffic>>>uplink"
-			if c, _ := stats.GetOrRegisterCounter(d.stats, name); c != nil {
-				inboundLink.Writer = &SizeStatWriter{
-					Counter: c,
-					Writer:  inboundLink.Writer,
-				}
-			}
+		var t *counter.TrafficCounter
+		if c, ok := d.Counter.Load(sessionInbound.Tag); !ok {
+			t = counter.NewTrafficCounter()
+			d.Counter.Store(sessionInbound.Tag, t)
+		} else {
+			t = c.(*counter.TrafficCounter)
 		}
-		if p.Stats.UserDownlink {
-			name := "user>>>" + user.Email + ">>>traffic>>>downlink"
-			if c, _ := stats.GetOrRegisterCounter(d.stats, name); c != nil {
-				outboundLink.Writer = &SizeStatWriter{
-					Counter: c,
-					Writer:  outboundLink.Writer,
-				}
-			}
+
+		ts := t.GetCounter(user.Email)
+		upcounter := &counter.XrayTrafficCounter{V: &ts.UpCounter}
+		downcounter := &counter.XrayTrafficCounter{V: &ts.DownCounter}
+		inboundLink.Writer = &dispatcher.SizeStatWriter{
+			Counter: upcounter,
+			Writer:  inboundLink.Writer,
+		}
+		outboundLink.Writer = &dispatcher.SizeStatWriter{
+			Counter: downcounter,
+			Writer:  outboundLink.Writer,
 		}
 	}
 
