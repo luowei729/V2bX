@@ -62,7 +62,7 @@ jobs:
     # 7. 部署到 MicroK8s（关键）
     - name: Deploy to MicroK8s
       run: |
-        kubectl set image deployment/vb \
+        kubectl set image daemonset/vb \
         vb=ghcr.io/luowei729/vb:${{ github.sha }}
 
         kubectl rollout status daemonset/vb
