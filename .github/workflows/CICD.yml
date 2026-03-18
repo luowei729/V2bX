@@ -1,0 +1,68 @@
+name: Build & Deploy to MicroK8s
+
+on:
+  push:
+    branches: [ "dev_new" ]
+  workflow_dispatch:
+
+jobs:
+  build-and-deploy:
+    runs-on: ubuntu-latest
+
+    steps:
+    - uses: actions/checkout@v4
+
+    # 1. QEMU（多架构）
+    - name: Set up QEMU
+      uses: docker/setup-qemu-action@v3
+
+    # 2. Buildx
+    - name: Set up Docker Buildx
+      uses: docker/setup-buildx-action@v3
+
+    # 3. 登录 GHCR
+    - name: Login to GHCR
+      uses: docker/login-action@v3
+      with:
+        registry: ghcr.io
+        username: ${{ github.repository_owner }}
+        password: ${{ secrets.GITHUB_TOKEN }}
+
+    # 4. 登录 DockerHub
+    - name: Login to Docker Hub
+      uses: docker/login-action@v3
+      with:
+        username: ${{ secrets.DOCKERHUB_USERNAME }}
+        password: ${{ secrets.DOCKERHUB_TOKEN }}
+
+    # 5. Build + Push
+    - name: Build and push multi-platform image
+      uses: docker/build-push-action@v5
+      with:
+        context: .
+        file: Dockerfile
+        platforms: linux/amd64,linux/arm64
+        push: true
+        tags: |
+          ghcr.io/luowei729/vb:latest
+          ghcr.io/luowei729/vb:${{ github.sha }}
+          liukezhou/vb:latest
+          liukezhou/vb:${{ github.sha }}
+        cache-from: type=registry,ref=ghcr.io/luowei729/vb:cache
+        cache-to: type=registry,ref=ghcr.io/luowei729/vb:cache,mode=max
+
+    # 6. 写入 kubeconfig（你刚给的）
+    - name: Setup kubeconfig
+      run: |
+        mkdir -p ~/.kube
+        cat <<EOF > ~/.kube/config
+        ${{ secrets.KUBE_CONFIG }}
+        EOF
+
+    # 7. 部署到 MicroK8s（关键）
+    - name: Deploy to MicroK8s
+      run: |
+        kubectl set image deployment/vb \
+        vb=ghcr.io/luowei729/vb:${{ github.sha }}
+
+        kubectl rollout status daemonset/vb
